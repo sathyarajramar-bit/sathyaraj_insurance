@@ -1,0 +1,23 @@
+# Maven
+target/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+.factorypath
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local environment (never commit real secrets)
+.env
+
+# Logs
+*.log
+logs/
+data/

@@ -1,0 +1,288 @@
+# Phase 1 infrastructure. MySQL, Redis and the business services are added in later phases.
+# Usage:  cp .env.example .env   (edit secrets)   then   docker compose up --build
+name: insurance-ecommerce
+
+services:
+  eureka-server:
+    build:
+      context: .
+      dockerfile: eureka-server/Dockerfile
+    container_name: eureka-server
+    ports:
+      - "8761:8761"
+    environment:
+      EUREKA_HOSTNAME: eureka-server
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8761/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - insurance-net
+
+  config-server:
+    build:
+      context: .
+      dockerfile: config-server/Dockerfile
+    container_name: config-server
+    ports:
+      - "8888:8888"
+    environment:
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      EUREKA_PREFER_IP: "true"
+      CONFIG_SERVER_USER: ${CONFIG_SERVER_USER:-config-user}
+      CONFIG_SERVER_PASSWORD: ${CONFIG_SERVER_PASSWORD:-config-pass}
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8888/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - insurance-net
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      CONFIG_SERVER_URL: http://config-server:8888
+      CONFIG_SERVER_USER: ${CONFIG_SERVER_USER:-config-user}
+      CONFIG_SERVER_PASSWORD: ${CONFIG_SERVER_PASSWORD:-config-pass}
+      CONFIG_FAIL_FAST: "true"
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      EUREKA_PREFER_IP: "true"
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env (at least 32 characters)}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:4200}
+    depends_on:
+      config-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    networks:
+      - insurance-net
+
+  mysql:
+    image: mysql:8.4
+    container_name: mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_USER: ${MYSQL_USER:-insurance}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-insurance}
+      MYSQL_DATABASE: auth_db
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - insurance-net
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: auth-service/Dockerfile
+    container_name: auth-service
+    ports:
+      - "8081:8081"
+    environment:
+      CONFIG_SERVER_URL: http://config-server:8888
+      CONFIG_SERVER_USER: ${CONFIG_SERVER_USER:-config-user}
+      CONFIG_SERVER_PASSWORD: ${CONFIG_SERVER_PASSWORD:-config-pass}
+      CONFIG_FAIL_FAST: "true"
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      EUREKA_PREFER_IP: "true"
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env (at least 32 characters)}
+      MYSQL_HOST: mysql
+      MYSQL_USER: ${MYSQL_USER:-insurance}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-insurance}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@insurance.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+    depends_on:
+      config-server:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    networks:
+      - insurance-net
+
+  customer-service:
+    build:
+      context: .
+      dockerfile: customer-service/Dockerfile
+    container_name: customer-service
+    ports:
+      - "8082:8082"
+    environment:
+      CONFIG_SERVER_URL: http://config-server:8888
+      CONFIG_SERVER_USER: ${CONFIG_SERVER_USER:-config-user}
+      CONFIG_SERVER_PASSWORD: ${CONFIG_SERVER_PASSWORD:-config-pass}
+      CONFIG_FAIL_FAST: "true"
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      EUREKA_PREFER_IP: "true"
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env (at least 32 characters)}
+      MYSQL_HOST: mysql
+      MYSQL_USER: ${MYSQL_USER:-insurance}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-insurance}
+    depends_on:
+      config-server:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8082/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    networks:
+      - insurance-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - insurance-net
+
+  product-service:
+    build:
+      context: .
+      dockerfile: product-service/Dockerfile
+    container_name: product-service
+    ports:
+      - "8083:8083"
+    environment:
+      CONFIG_SERVER_URL: http://config-server:8888
+      CONFIG_SERVER_USER: ${CONFIG_SERVER_USER:-config-user}
+      CONFIG_SERVER_PASSWORD: ${CONFIG_SERVER_PASSWORD:-config-pass}
+      CONFIG_FAIL_FAST: "true"
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      EUREKA_PREFER_IP: "true"
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env (at least 32 characters)}
+      MYSQL_HOST: mysql
+      MYSQL_USER: ${MYSQL_USER:-insurance}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-insurance}
+      REDIS_HOST: redis
+    depends_on:
+      config-server:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8083/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    networks:
+      - insurance-net
+
+  quote-service:
+    build:
+      context: .
+      dockerfile: quote-service/Dockerfile
+    container_name: quote-service
+    ports:
+      - "8084:8084"
+    environment:
+      CONFIG_SERVER_URL: http://config-server:8888
+      CONFIG_SERVER_USER: ${CONFIG_SERVER_USER:-config-user}
+      CONFIG_SERVER_PASSWORD: ${CONFIG_SERVER_PASSWORD:-config-pass}
+      CONFIG_FAIL_FAST: "true"
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      EUREKA_PREFER_IP: "true"
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env (at least 32 characters)}
+      MYSQL_HOST: mysql
+      MYSQL_USER: ${MYSQL_USER:-insurance}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-insurance}
+      REDIS_HOST: redis
+    depends_on:
+      config-server:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8084/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    networks:
+      - insurance-net
+
+  proposal-service:
+    build:
+      context: .
+      dockerfile: proposal-service/Dockerfile
+    container_name: proposal-service
+    ports:
+      - "8085:8085"
+    environment:
+      CONFIG_SERVER_URL: http://config-server:8888
+      CONFIG_SERVER_USER: ${CONFIG_SERVER_USER:-config-user}
+      CONFIG_SERVER_PASSWORD: ${CONFIG_SERVER_PASSWORD:-config-pass}
+      CONFIG_FAIL_FAST: "true"
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      EUREKA_PREFER_IP: "true"
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env (at least 32 characters)}
+      MYSQL_HOST: mysql
+      MYSQL_USER: ${MYSQL_USER:-insurance}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-insurance}
+    depends_on:
+      config-server:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8085/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    networks:
+      - insurance-net
+
+volumes:
+  mysql-data:
+  redis-data:
+
+networks:
+  insurance-net:
+    driver: bridge

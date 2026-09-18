@@ -1,0 +1,76 @@
+server:
+  port: ${SERVER_PORT:8084}
+
+spring:
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/quote_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: ${MYSQL_USER:insurance}
+    password: ${MYSQL_PASSWORD:insurance}
+    hikari:
+      maximum-pool-size: 10
+  cache:
+    type: redis
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 500ms
+      connect-timeout: 500ms
+  cloud:
+    openfeign:
+      client:
+        config:
+          default:
+            connect-timeout: 2000     # ms: a dependency that does not even accept the connection fails fast
+            read-timeout: 5000        # ms: bounds each attempt; retry/circuit breaker sit on top of this
+
+quote:
+  validity: ${QUOTE_VALIDITY:15d}      # how long a GENERATED quote can be accepted
+  cache-ttl: 15m
+  expiry:
+    cron: ${QUOTE_EXPIRY_CRON:0 */10 * * * *}
+
+# Resilience4j: one instance per downstream. Counts the last 10 calls; opens when half fail; stays open
+# 20 s, then lets 3 trial calls through (half-open). Retry: 3 attempts with backoff for transient errors.
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        register-health-indicator: true
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 20s
+        permitted-number-of-calls-in-half-open-state: 3
+        ignore-exceptions:
+          - com.insurance.common.exception.BusinessException   # 404/422 from a dependency is not an outage
+    instances:
+      product-service:
+        base-config: default
+      customer-service:
+        base-config: default
+  retry:
+    configs:
+      default:
+        max-attempts: 3
+        wait-duration: 300ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        ignore-exceptions:
+          - com.insurance.common.exception.BusinessException
+    instances:
+      product-service:
+        base-config: default
+      customer-service:
+        base-config: default
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,circuitbreakers,retries
+  health:
+    circuitbreakers:
+      enabled: true

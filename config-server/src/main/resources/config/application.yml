@@ -1,0 +1,68 @@
+# Shared by EVERY client service (lowest precedence). Service specific files override these values.
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+    registry-fetch-interval-seconds: 10
+  instance:
+    # Laptops have several adapters (VPN, Wi-Fi, virtual) and IPs change: registering as localhost is the
+    # only address that always works locally. Docker sets EUREKA_PREFER_IP=true so containers register their IP.
+    prefer-ip-address: ${EUREKA_PREFER_IP:false}
+    hostname: ${EUREKA_INSTANCE_HOSTNAME:localhost}
+    # Faster failure detection than the 30s/90s defaults; fine for a small cluster.
+    lease-renewal-interval-in-seconds: 10
+    lease-expiration-duration-in-seconds: 30
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,env,loggers
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+  info:
+    env:
+      enabled: true
+    java:
+      enabled: true
+
+# ---- Shared by all business services (ignored by services without JPA) ----
+spring:
+  jpa:
+    open-in-view: false            # no lazy loading from controllers/serialisers; transactions end in the service
+    hibernate:
+      ddl-auto: validate           # Flyway owns the schema; Hibernate only checks the mapping matches
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+        timezone:
+          default_storage: NORMALIZE_UTC   # Instant columns are plain DATETIME(6) in UTC on every database
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+  data:
+    web:
+      pageable:
+        max-page-size: 100         # caps ?size= so a client cannot ask for a million rows
+        default-page-size: 20
+
+security:
+  jwt:
+    # Same secret the gateway verifies with. The default is for local development only.
+    secret: ${JWT_SECRET:insurance-dev-only-jwt-secret-change-me-0123456789}
+    issuer: insurance-platform
+    access-token-ttl: ${JWT_ACCESS_TTL:15m}
+    refresh-token-ttl: ${JWT_REFRESH_TTL:7d}
+
+logging:
+  level:
+    root: INFO
+    com.insurance: INFO
+  pattern:
+    # correlation id in every line: grep one id across gateway and service logs
+    level: "%5p [${spring.application.name:-},%X{correlationId:-}]"

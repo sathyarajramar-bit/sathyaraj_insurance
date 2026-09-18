@@ -1,0 +1,8 @@
+**/target
+**/.idea
+**/*.iml
+.git
+.env
+docs
+README.md
+data

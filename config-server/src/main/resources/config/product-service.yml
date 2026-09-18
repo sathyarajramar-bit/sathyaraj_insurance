@@ -1,0 +1,29 @@
+server:
+  port: ${SERVER_PORT:8083}
+
+spring:
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/product_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: ${MYSQL_USER:insurance}
+    password: ${MYSQL_PASSWORD:insurance}
+    hikari:
+      maximum-pool-size: 10
+  cache:
+    type: redis
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 500ms          # a slow/absent Redis must not stall requests: fail fast, CacheErrorHandler falls back to DB
+      connect-timeout: 500ms
+
+product:
+  cache:
+    product-ttl: ${PRODUCT_CACHE_TTL:1h}
+    catalog-ttl: ${PRODUCT_CATALOG_CACHE_TTL:10m}
+    pricing-ttl: ${PRODUCT_PRICING_CACHE_TTL:1h}
+
+security:
+  public-paths:
+    - "GET /api/products/**"     # browsing is public; pricing has its own @PreAuthorize (ADMIN/AGENT/SERVICE)

@@ -1,0 +1,45 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:proposal_db;MODE=MySQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+        timezone:
+          default_storage: NORMALIZE_UTC
+  flyway:
+    enabled: true
+  data:
+    web:
+      pageable:
+        max-page-size: 100
+
+eureka:
+  client:
+    enabled: false
+
+security:
+  jwt:
+    secret: test-only-jwt-secret-with-at-least-32-characters
+    issuer: insurance-platform
+
+proposal:
+  require-kyc-verified: true
+  minimum-proposer-age: 18
+
+resilience4j:
+  retry:
+    instances:
+      quote-service:
+        max-attempts: 2
+        wait-duration: 10ms
+      customer-service:
+        max-attempts: 2
+        wait-duration: 10ms

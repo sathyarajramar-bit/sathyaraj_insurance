@@ -1,0 +1,81 @@
+# Configuration for the API Gateway (spring.application.name = api-gateway)
+
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  cloud:
+    gateway:
+      server:
+        webflux:
+          httpclient:
+            connect-timeout: 3000      # ms to establish a TCP connection to a downstream service
+            response-timeout: 10s      # max time to wait for the downstream response
+          globalcors:
+            add-to-simple-url-handler-mapping: true
+            cors-configurations:
+              "[/**]":
+                allowedOriginPatterns: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:4200}
+                allowedMethods: GET,POST,PUT,PATCH,DELETE,OPTIONS
+                allowedHeaders: "*"
+                exposedHeaders: X-Correlation-Id
+                allowCredentials: true
+                maxAge: 3600
+          default-filters:
+            - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_UNIQUE
+          # "lb://" = resolve the service name through Eureka and client-side load balance across instances.
+          routes:
+            - id: auth-service
+              uri: lb://auth-service
+              predicates:
+                - Path=/api/auth/**
+            - id: customer-service
+              uri: lb://customer-service
+              predicates:
+                - Path=/api/customers/**
+            - id: product-service
+              uri: lb://product-service
+              predicates:
+                - Path=/api/products/**
+            - id: quote-service
+              uri: lb://quote-service
+              predicates:
+                - Path=/api/quotes/**
+            - id: proposal-service
+              uri: lb://proposal-service
+              predicates:
+                - Path=/api/proposals/**
+            - id: payment-service
+              uri: lb://payment-service
+              predicates:
+                - Path=/api/payments/**
+            - id: policy-service
+              uri: lb://policy-service
+              predicates:
+                - Path=/api/policies/**
+            - id: notification-service
+              uri: lb://notification-service
+              predicates:
+                - Path=/api/notifications/**
+
+gateway:
+  security:
+    # The placeholder is resolved on the GATEWAY (client) side from its environment, so the secret
+    # itself never lives in this file. The default value is for local development only.
+    jwt-secret: ${JWT_SECRET:insurance-dev-only-jwt-secret-change-me-0123456789}
+    # Endpoints callable without a JWT. Format: "<METHOD> <ant-pattern>" or "<ant-pattern>" (any method).
+    public-paths:
+      - "POST /api/auth/register"
+      - "POST /api/auth/login"
+      - "POST /api/auth/refresh"
+      - "GET /api/products/**"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,gateway
+  endpoint:
+    gateway:
+      # The gateway endpoint (/actuator/gateway/routes) is disabled by default; handy for debugging routing.
+      access: unrestricted

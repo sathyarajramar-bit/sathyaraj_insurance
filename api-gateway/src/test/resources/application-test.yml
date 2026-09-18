@@ -1,0 +1,35 @@
+# Test profile: no Config Server, no Eureka, fixed port so a route can loop back into this instance.
+server:
+  port: 18080
+
+spring:
+  cloud:
+    gateway:
+      server:
+        webflux:
+          httpclient:
+            connect-timeout: 1000
+            response-timeout: 3s
+          routes:
+            # Loops back into the gateway's own test EchoController so we can inspect forwarded headers.
+            - id: echo
+              uri: http://localhost:${server.port}
+              predicates:
+                - Path=/secure/**,/public/**
+              filters:
+                - RewritePath=/(secure|public)/.*, /internal/echo
+            # No registered instance for this service name: simulates a downstream service that is down.
+            - id: down
+              uri: lb://no-such-service
+              predicates:
+                - Path=/down/**
+
+eureka:
+  client:
+    enabled: false
+
+gateway:
+  security:
+    jwt-secret: test-only-jwt-secret-with-at-least-32-characters
+    public-paths:
+      - "GET /public/**"

@@ -1,0 +1,22 @@
+server:
+  port: ${SERVER_PORT:8081}
+
+spring:
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/auth_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: ${MYSQL_USER:insurance}
+    password: ${MYSQL_PASSWORD:insurance}
+    hikari:
+      maximum-pool-size: 10
+
+security:
+  # No token needed for these (the gateway has the same list). Everything else requires a JWT.
+  public-paths:
+    - /api/auth/register
+    - /api/auth/login
+    - /api/auth/refresh
+
+auth:
+  admin:
+    email: ${ADMIN_EMAIL:admin@insurance.local}
+    password: ${ADMIN_PASSWORD:}

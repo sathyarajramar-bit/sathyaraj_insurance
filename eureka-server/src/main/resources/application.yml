@@ -1,0 +1,38 @@
+server:
+  port: ${SERVER_PORT:8761}
+
+spring:
+  application:
+    name: eureka-server
+
+eureka:
+  instance:
+    hostname: ${EUREKA_HOSTNAME:localhost}
+  client:
+    # A standalone registry must not try to register with (or fetch from) itself.
+    register-with-eureka: false
+    fetch-registry: false
+    service-url:
+      defaultZone: http://${eureka.instance.hostname}:${server.port}/eureka/
+  server:
+    # Self-preservation keeps stale instances when many heartbeats are lost at once (network partition).
+    # It is the right default in production but confusing on a laptop, so it is off for local dev.
+    enable-self-preservation: ${EUREKA_SELF_PRESERVATION:false}
+    # How often the server scans for expired leases.
+    eviction-interval-timer-in-ms: 10000
+    # Faster propagation of registry changes to clients in local development.
+    response-cache-update-interval-ms: 5000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.netflix.eureka: WARN
+    com.netflix.discovery: WARN
