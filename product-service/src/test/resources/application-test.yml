@@ -38,3 +38,6 @@ security:
     issuer: insurance-platform
   public-paths:
     - "GET /api/products/**"
+
+notifications:
+  enabled: false

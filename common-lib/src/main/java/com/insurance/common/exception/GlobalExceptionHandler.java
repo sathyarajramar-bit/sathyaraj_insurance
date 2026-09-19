@@ -18,6 +18,7 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -70,10 +71,12 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class,
-            MissingServletRequestParameterException.class})
+            MissingServletRequestParameterException.class, MissingRequestHeaderException.class})
     public ResponseEntity<ApiErrorResponse> handleMalformedRequest(Exception ex, HttpServletRequest request) {
-        return build(HttpStatus.BAD_REQUEST, "MALFORMED_REQUEST", "Request is malformed or has an invalid parameter",
-                request, null);
+        String message = ex instanceof MissingRequestHeaderException mrh
+                ? "Required header " + mrh.getHeaderName() + " is missing"
+                : "Request is malformed or has an invalid parameter";
+        return build(HttpStatus.BAD_REQUEST, "MALFORMED_REQUEST", message, request, null);
     }
 
     @ExceptionHandler(AuthenticationException.class)

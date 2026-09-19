@@ -38,6 +38,7 @@ class ProposalControllerIT {
     @Autowired private ObjectMapper objectMapper;
     @MockitoBean private QuoteClient quoteClient;
     @MockitoBean private CustomerClient customerClient;
+    @MockitoBean private com.insurance.common.notification.NotificationPublisher notifications;
 
     static final String JANE = TestJwt.bearer(42, "jane@x.com", "CUSTOMER");
     static final String OTHER = TestJwt.bearer(99, "other@x.com", "CUSTOMER");

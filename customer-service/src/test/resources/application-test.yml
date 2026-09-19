@@ -34,3 +34,6 @@ customer:
   minimum-age-years: 18
   vehicle:
     max-age-years: 20
+
+notifications:
+  enabled: false

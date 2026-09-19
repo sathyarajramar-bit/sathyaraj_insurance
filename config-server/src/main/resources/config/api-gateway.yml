@@ -57,6 +57,14 @@ spring:
               uri: lb://notification-service
               predicates:
                 - Path=/api/notifications/**
+            - id: claims-service
+              uri: lb://claims-service
+              predicates:
+                - Path=/api/claims/**
+            - id: document-service
+              uri: lb://document-service
+              predicates:
+                - Path=/api/documents/**
 
 gateway:
   security:

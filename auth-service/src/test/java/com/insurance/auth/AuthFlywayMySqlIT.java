@@ -38,6 +38,9 @@ class AuthFlywayMySqlIT {
     @MockitoBean
     private CustomerClient customerClient;
 
+    @MockitoBean
+    private com.insurance.common.notification.NotificationPublisher notifications;
+
     @Autowired
     private UserRepository userRepository;
 

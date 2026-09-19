@@ -1,0 +1,65 @@
+server:
+  port: ${SERVER_PORT:8088}
+
+spring:
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/notification_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: ${MYSQL_USER:insurance}
+    password: ${MYSQL_PASSWORD:insurance}
+    hikari:
+      maximum-pool-size: 10
+  cloud:
+    openfeign:
+      client:
+        config:
+          default:
+            connect-timeout: 2000
+            read-timeout: 5000
+
+notification:
+  email:
+    provider: ${NOTIFICATION_EMAIL_PROVIDER:MOCK}   # MOCK logs the message; SES/SENDGRID adapters select themselves
+  sms:
+    provider: ${NOTIFICATION_SMS_PROVIDER:MOCK}
+  sms-enabled: ${NOTIFICATION_SMS_ENABLED:true}
+  retry:
+    cron: ${NOTIFICATION_RETRY_CRON:0 */5 * * * *}
+    max-attempts: 5
+
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        register-health-indicator: true
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 20s
+        permitted-number-of-calls-in-half-open-state: 3
+        ignore-exceptions:
+          - com.insurance.common.exception.BusinessException
+    instances:
+      customer-service:
+        base-config: default
+  retry:
+    configs:
+      default:
+        max-attempts: 3
+        wait-duration: 300ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        ignore-exceptions:
+          - com.insurance.common.exception.BusinessException
+    instances:
+      customer-service:
+        base-config: default
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,circuitbreakers,retries
+  health:
+    circuitbreakers:
+      enabled: true

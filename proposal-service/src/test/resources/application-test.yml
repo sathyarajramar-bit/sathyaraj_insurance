@@ -43,3 +43,6 @@ resilience4j:
       customer-service:
         max-attempts: 2
         wait-duration: 10ms
+
+notifications:
+  enabled: false

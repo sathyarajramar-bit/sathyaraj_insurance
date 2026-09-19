@@ -1,0 +1,67 @@
+server:
+  port: ${SERVER_PORT:8087}
+
+spring:
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/policy_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: ${MYSQL_USER:insurance}
+    password: ${MYSQL_PASSWORD:insurance}
+    hikari:
+      maximum-pool-size: 10
+  cloud:
+    openfeign:
+      client:
+        config:
+          default:
+            connect-timeout: 2000
+            read-timeout: 5000
+
+policy:
+  renewal-window-days: ${POLICY_RENEWAL_WINDOW_DAYS:30}
+  renewal-grace-days: ${POLICY_RENEWAL_GRACE_DAYS:30}
+  reminder-days-before: 30,15,7
+  jobs:
+    expiry-cron: ${POLICY_EXPIRY_CRON:0 5 0 * * *}
+    reminder-cron: ${POLICY_REMINDER_CRON:0 15 8 * * *}
+
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        register-health-indicator: true
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 20s
+        permitted-number-of-calls-in-half-open-state: 3
+        ignore-exceptions:
+          - com.insurance.common.exception.BusinessException
+    instances:
+      proposal-service:
+        base-config: default
+      payment-service:
+        base-config: default
+  retry:
+    configs:
+      default:
+        max-attempts: 3
+        wait-duration: 300ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        ignore-exceptions:
+          - com.insurance.common.exception.BusinessException
+    instances:
+      proposal-service:
+        base-config: default
+      payment-service:
+        base-config: default
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,circuitbreakers,retries
+  health:
+    circuitbreakers:
+      enabled: true

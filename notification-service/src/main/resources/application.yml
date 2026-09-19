@@ -1,0 +1,22 @@
+# Bootstrap configuration only; everything else comes from the Config Server (config/notification-service.yml).
+spring:
+  application:
+    name: notification-service
+  config:
+    import: "optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
+  cloud:
+    config:
+      username: ${CONFIG_SERVER_USER:config-user}
+      password: ${CONFIG_SERVER_PASSWORD:config-pass}
+      fail-fast: ${CONFIG_FAIL_FAST:false}
+
+server:
+  port: ${SERVER_PORT:8088}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: ${EUREKA_PREFER_IP:false}
+    hostname: ${EUREKA_INSTANCE_HOSTNAME:localhost}

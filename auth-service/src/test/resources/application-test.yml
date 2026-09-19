@@ -40,3 +40,6 @@ auth:
   admin:
     email: admin@test.local
     password: Admin1234
+
+notifications:
+  enabled: false

@@ -43,6 +43,7 @@ class AuthServiceTest {
     @Mock private RefreshTokenService refreshTokenService;
     @Mock private CustomerProfileClient customerProfileClient;
     @Mock private UserMapper userMapper;
+    @Mock private com.insurance.common.notification.NotificationPublisher notifications;
     @InjectMocks private AuthService authService;
 
     private final RegisterRequest register = new RegisterRequest("Jane@Example.com", "Passw0rd", " Jane ", "Doe", "9876543210");

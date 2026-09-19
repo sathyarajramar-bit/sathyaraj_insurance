@@ -41,6 +41,11 @@
         <module>product-service</module>
         <module>quote-service</module>
         <module>proposal-service</module>
+        <module>payment-service</module>
+        <module>policy-service</module>
+        <module>claims-service</module>
+        <module>document-service</module>
+        <module>notification-service</module>
     </modules>
 
     <properties>

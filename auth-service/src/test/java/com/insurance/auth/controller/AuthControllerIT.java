@@ -37,6 +37,7 @@ class AuthControllerIT {
     @Autowired private MockMvc mockMvc;
     @Autowired private ObjectMapper objectMapper;
     @MockitoBean private CustomerClient customerClient;
+    @MockitoBean private com.insurance.common.notification.NotificationPublisher notifications;
 
     private static final String REGISTER = """
             {"email":"%s","password":"Passw0rd1","firstName":"Jane","lastName":"Doe","phone":"9876543210"}""";

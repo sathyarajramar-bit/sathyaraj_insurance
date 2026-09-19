@@ -12,12 +12,16 @@ import com.insurance.auth.repository.UserRepository;
 import com.insurance.auth.security.InvalidCredentialsException;
 import com.insurance.auth.security.JwtTokenIssuer;
 import com.insurance.common.exception.DuplicateResourceException;
+import com.insurance.common.notification.NotificationEventType;
+import com.insurance.common.notification.NotificationPublisher;
+import com.insurance.common.notification.NotificationRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -41,6 +45,7 @@ public class AuthService {
     private final RefreshTokenService refreshTokenService;
     private final CustomerProfileClient customerProfileClient;
     private final UserMapper userMapper;
+    private final NotificationPublisher notifications;
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -60,6 +65,8 @@ public class AuthService {
                 user.getId(), user.getEmail(), user.getFirstName(), user.getLastName(), user.getPhone()));
 
         log.info("Registered user {} ({})", user.getId(), user.getEmail());
+        notifications.publish(NotificationRequest.of(NotificationEventType.REGISTRATION, user.getId(), null, user.getEmail(), user.getPhone(),
+                "USER", String.valueOf(user.getId()), Map.of("firstName", user.getFirstName())));
         return issueTokens(user);
     }
 
