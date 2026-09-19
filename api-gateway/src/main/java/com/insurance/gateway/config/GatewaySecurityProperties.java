@@ -15,6 +15,8 @@ import java.util.List;
  *
  * <p>Validation runs at startup: a missing or short JWT secret fails fast with a clear message
  * instead of producing "invalid signature" errors for every request later.
+ * 
+ * 
  */
 @Getter
 @Setter
