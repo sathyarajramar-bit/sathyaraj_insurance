@@ -9,6 +9,7 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
  *
  * <p>Profiles are created by auth-service on registration (service-to-service call) and then
  * maintained by the customer. Later phases read vehicles from here when generating quotes.
+ * testing for github upload
  */
 @SpringBootApplication
 @ConfigurationPropertiesScan
