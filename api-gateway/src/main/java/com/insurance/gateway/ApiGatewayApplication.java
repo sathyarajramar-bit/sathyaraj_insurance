@@ -6,6 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 
 /**
  * Single entry point for all clients (web, mobile, partners).
+ * 
  *
  * <p>Responsibilities (and only these; business logic never lives here):
  * <ul>
