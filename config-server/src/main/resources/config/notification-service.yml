@@ -3,11 +3,15 @@ server:
 
 spring:
   datasource:
-    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/notification_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
-    username: ${MYSQL_USER:insurance}
-    password: ${MYSQL_PASSWORD:insurance}
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:ecommerceinsurance}?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: ${MYSQL_USER:root}
+    password: ${MYSQL_PASSWORD:System}
     hikari:
       maximum-pool-size: 10
+  flyway:
+    # All services share the ecommerceinsurance schema: each one keeps its own history table so their
+    # independent V1.. scripts do not collide.
+    table: flyway_history_notification_service
   cloud:
     openfeign:
       client:
@@ -15,10 +19,33 @@ spring:
           default:
             connect-timeout: 2000
             read-timeout: 5000
+  # SMTP relay used by SmtpEmailProvider (only when notification.email.provider=SMTP). Defaults are Gmail:
+  # enable 2-Step Verification on the Google account and create an App Password (myaccount.google.com/apppasswords);
+  # the normal account password is rejected. Port 587 + STARTTLS; use 465 with mail.smtp.ssl.enable=true instead if
+  # 587 is blocked on your network.
+  mail:
+    host: ${SMTP_HOST:smtp.gmail.com}
+    port: ${SMTP_PORT:587}
+    username: ${GMAIL_USERNAME:}
+    password: ${GMAIL_APP_PASSWORD:}
+    protocol: smtp
+    default-encoding: UTF-8
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          connectiontimeout: 5000
+          timeout: 10000
+          writetimeout: 10000
 
 notification:
   email:
-    provider: ${NOTIFICATION_EMAIL_PROVIDER:MOCK}   # MOCK logs the message; SES/SENDGRID adapters select themselves
+    provider: ${NOTIFICATION_EMAIL_PROVIDER:MOCK}   # MOCK logs the message; SMTP sends through spring.mail (Gmail)
+    from: ${NOTIFICATION_EMAIL_FROM:${GMAIL_USERNAME:}}   # Gmail rewrites From to the account unless it is a verified alias
+    from-name: ${NOTIFICATION_EMAIL_FROM_NAME:Insurance Platform}
   sms:
     provider: ${NOTIFICATION_SMS_PROVIDER:MOCK}
   sms-enabled: ${NOTIFICATION_SMS_ENABLED:true}
@@ -63,3 +90,7 @@ management:
   health:
     circuitbreakers:
       enabled: true
+    mail:
+      # The mail health indicator opens an SMTP connection on every /actuator/health call; keep the probe cheap and
+      # local (delivery failures already surface as FAILED rows + retries).
+      enabled: false

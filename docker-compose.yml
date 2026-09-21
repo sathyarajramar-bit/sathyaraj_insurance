@@ -364,6 +364,10 @@ networks:
       MYSQL_HOST: mysql
       MYSQL_USER: ${MYSQL_USER:-insurance}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-insurance}
+      NOTIFICATION_EMAIL_PROVIDER: ${NOTIFICATION_EMAIL_PROVIDER:-MOCK}
+      GMAIL_USERNAME: ${GMAIL_USERNAME:-}
+      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD:-}
+      NOTIFICATION_EMAIL_FROM_NAME: ${NOTIFICATION_EMAIL_FROM_NAME:-Insurance Platform}
     depends_on:
       config-server:
         condition: service_healthy

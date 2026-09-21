@@ -45,6 +45,9 @@ spring:
   flyway:
     enabled: true
     baseline-on-migrate: true
+    # Services share one schema, so every service after the first sees a non-empty schema and gets baselined.
+    # The default baseline version (1) would skip each service's own V1 script; 0 lets V1.. run normally.
+    baseline-version: 0
   data:
     web:
       pageable:

@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.UUID;
 
-/** Logs instead of sending. An address at the domain fail.test fails, to exercise the retry path. */
+/** Default when no provider is configured: logs instead of sending. An address at the domain fail.test fails, to exercise the retry path. */
 @Slf4j
 @Component
 @ConditionalOnProperty(prefix = "notification.email", name = "provider", havingValue = "MOCK", matchIfMissing = true)
