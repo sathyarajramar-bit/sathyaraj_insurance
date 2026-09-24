@@ -3,3 +3,4 @@ com.insurance.common.security.CommonSecurityAutoConfiguration
 com.insurance.common.jpa.CommonJpaAutoConfiguration
 com.insurance.common.client.CommonFeignAutoConfiguration
 com.insurance.common.notification.CommonNotificationAutoConfiguration
+com.insurance.common.messaging.CommonKafkaAutoConfiguration

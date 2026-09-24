@@ -32,7 +32,7 @@ class NotificationPublisherTest {
 
     private final NotificationClient client = mock(NotificationClient.class);
     private final List<Runnable> queued = new ArrayList<>();          // executor that records instead of running
-    private final NotificationPublisher publisher = new NotificationPublisher(client, queued::add);
+    private final NotificationPublisher publisher = new NotificationPublisher(new FeignNotificationTransport(client), queued::add);
     private final TransactionTemplate tx = new TransactionTemplate(new NoopTransactionManager());
     private final NotificationRequest request = NotificationRequest.of(NotificationEventType.POLICY_CANCELLED, 7L, 3L,
             "jane@example.com", null, "POLICY", "PL-1", Map.of("policyNumber", "PL-1", "reason", "sold the car"));
@@ -86,7 +86,7 @@ class NotificationPublisherTest {
 
     @Test
     void executorRejectionIsLoggedNotThrown() {
-        NotificationPublisher saturated = new NotificationPublisher(client, r -> { throw new java.util.concurrent.RejectedExecutionException("full"); });
+        NotificationPublisher saturated = new NotificationPublisher(new FeignNotificationTransport(client), r -> { throw new java.util.concurrent.RejectedExecutionException("full"); });
 
         saturated.publish(request);                // no exception reaches the business transaction
 

@@ -113,6 +113,8 @@ services:
       MYSQL_HOST: mysql
       MYSQL_USER: ${MYSQL_USER:-insurance}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-insurance}
+      KAFKA_ENABLED: ${KAFKA_ENABLED:-false}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@insurance.local}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
     depends_on:
@@ -147,6 +149,8 @@ services:
       MYSQL_HOST: mysql
       MYSQL_USER: ${MYSQL_USER:-insurance}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-insurance}
+      KAFKA_ENABLED: ${KAFKA_ENABLED:-false}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     depends_on:
       config-server:
         condition: service_healthy
@@ -177,6 +181,38 @@ services:
     networks:
       - insurance-net
 
+  # Single-node Kafka in KRaft mode (no ZooKeeper). Containers reach it as kafka:9092, the host as localhost:9094.
+  # Not verified on the author's machine (no Docker); mirrors the local scripts/kafka-*.cmd setup.
+  kafka:
+    image: apache/kafka:4.3.1
+    container_name: kafka
+    ports:
+      - "9094:9094"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 30s
+    networks:
+      - insurance-net
+
   product-service:
     build:
       context: .
@@ -195,6 +231,8 @@ services:
       MYSQL_HOST: mysql
       MYSQL_USER: ${MYSQL_USER:-insurance}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-insurance}
+      KAFKA_ENABLED: ${KAFKA_ENABLED:-false}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       REDIS_HOST: redis
     depends_on:
       config-server:
@@ -230,6 +268,8 @@ services:
       MYSQL_HOST: mysql
       MYSQL_USER: ${MYSQL_USER:-insurance}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-insurance}
+      KAFKA_ENABLED: ${KAFKA_ENABLED:-false}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       REDIS_HOST: redis
     depends_on:
       config-server:
@@ -265,6 +305,8 @@ services:
       MYSQL_HOST: mysql
       MYSQL_USER: ${MYSQL_USER:-insurance}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-insurance}
+      KAFKA_ENABLED: ${KAFKA_ENABLED:-false}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     depends_on:
       config-server:
         condition: service_healthy
@@ -300,8 +342,12 @@ networks:
       MYSQL_HOST: mysql
       MYSQL_USER: ${MYSQL_USER:-insurance}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-insurance}
+      KAFKA_ENABLED: ${KAFKA_ENABLED:-false}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     depends_on:
       config-server:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
       mysql:
         condition: service_healthy
@@ -332,8 +378,12 @@ networks:
       MYSQL_HOST: mysql
       MYSQL_USER: ${MYSQL_USER:-insurance}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-insurance}
+      KAFKA_ENABLED: ${KAFKA_ENABLED:-false}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     depends_on:
       config-server:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
       mysql:
         condition: service_healthy
@@ -364,12 +414,16 @@ networks:
       MYSQL_HOST: mysql
       MYSQL_USER: ${MYSQL_USER:-insurance}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-insurance}
+      KAFKA_ENABLED: ${KAFKA_ENABLED:-false}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       NOTIFICATION_EMAIL_PROVIDER: ${NOTIFICATION_EMAIL_PROVIDER:-MOCK}
       GMAIL_USERNAME: ${GMAIL_USERNAME:-}
       GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD:-}
       NOTIFICATION_EMAIL_FROM_NAME: ${NOTIFICATION_EMAIL_FROM_NAME:-Insurance Platform}
     depends_on:
       config-server:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
       mysql:
         condition: service_healthy
@@ -400,6 +454,8 @@ networks:
       MYSQL_HOST: mysql
       MYSQL_USER: ${MYSQL_USER:-insurance}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-insurance}
+      KAFKA_ENABLED: ${KAFKA_ENABLED:-false}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       DOCUMENT_STORAGE_DIR: /data/documents
     volumes:
       - document-data:/data/documents
@@ -435,6 +491,8 @@ networks:
       MYSQL_HOST: mysql
       MYSQL_USER: ${MYSQL_USER:-insurance}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-insurance}
+      KAFKA_ENABLED: ${KAFKA_ENABLED:-false}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     depends_on:
       config-server:
         condition: service_healthy
@@ -452,6 +510,7 @@ networks:
 volumes:
   mysql-data:
   redis-data:
+  kafka-data:
   document-data:
 
 networks:

@@ -16,6 +16,10 @@ import org.springframework.scheduling.annotation.EnableAsync;
  * {@code notifications.enabled=false} (tests, services that never notify). Delivery runs on the
  * application's task executor (the same pool {@code @Async} uses); a service without one gets a
  * plain thread-per-task executor.
+ *
+ * <p>The transport is HTTP unless another {@link NotificationTransport} bean exists: with
+ * {@code messaging.kafka.enabled=true} {@code CommonKafkaAutoConfiguration} (ordered before this class)
+ * contributes a Kafka producer transport and the Feign one below backs off.
  */
 @AutoConfiguration
 @ConditionalOnClass(name = "org.springframework.cloud.openfeign.FeignClient")
@@ -25,9 +29,15 @@ import org.springframework.scheduling.annotation.EnableAsync;
 public class CommonNotificationAutoConfiguration {
 
     @Bean
+    @ConditionalOnMissingBean(NotificationTransport.class)
+    NotificationTransport feignNotificationTransport(NotificationClient client) {
+        return new FeignNotificationTransport(client);
+    }
+
+    @Bean
     @ConditionalOnMissingBean
-    NotificationPublisher notificationPublisher(NotificationClient client, ObjectProvider<AsyncTaskExecutor> executors) {
+    NotificationPublisher notificationPublisher(NotificationTransport transport, ObjectProvider<AsyncTaskExecutor> executors) {
         AsyncTaskExecutor executor = executors.getIfUnique(() -> new SimpleAsyncTaskExecutor("notification-"));
-        return new NotificationPublisher(client, executor);
+        return new NotificationPublisher(transport, executor);
     }
 }

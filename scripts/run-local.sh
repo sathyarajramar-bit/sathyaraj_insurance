@@ -8,6 +8,9 @@ JAVA="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 export JWT_SECRET="${JWT_SECRET:-local-dev-secret-please-change-me-0123456789}"
 export ADMIN_PASSWORD="${ADMIN_PASSWORD:-Admin12345}"
 export GATEWAY_PORT="${GATEWAY_PORT:-8080}"
+# KAFKA_ENABLED=true scripts/run-local.sh  ->  payment->policy and notifications over Kafka (start scripts/kafka-start.cmd first)
+export KAFKA_ENABLED="${KAFKA_ENABLED:-false}"
+export KAFKA_BOOTSTRAP_SERVERS="${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092}"
 mkdir -p logs
 PLATFORM="eureka-server:8761 config-server:8888"
 SERVICES="auth-service:8081 customer-service:8082 product-service:8083 quote-service:8084 proposal-service:8085 payment-service:8086 policy-service:8087 notification-service:8088 document-service:8089 claims-service:8090"

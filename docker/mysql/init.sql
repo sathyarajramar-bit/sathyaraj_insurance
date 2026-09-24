@@ -1,7 +1,7 @@
 -- Runs once when the MySQL volume is first created.
--- All services currently share the ecommerceinsurance schema (see config-server/config/<service>.yml);
+-- All services currently share the retail_db schema (see config-server/config/<service>.yml);
 -- the per-service databases are kept for anyone who sets MYSQL_DATABASE per container.
-CREATE DATABASE IF NOT EXISTS ecommerceinsurance;
+CREATE DATABASE IF NOT EXISTS retail_db;
 CREATE DATABASE IF NOT EXISTS auth_db;
 CREATE DATABASE IF NOT EXISTS customer_db;
 CREATE DATABASE IF NOT EXISTS product_db;

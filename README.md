@@ -8,8 +8,9 @@ Every step is its own service.
 > **Status: all business services built (Phases 1 - 3H).** Phase 1 = platform (Eureka, Config Server,
 > API Gateway). Phase 2 = `common-lib`, `auth-service`, `customer-service`. Phase 3A = `product-service`,
 > 3B = `quote-service`, 3C = `proposal-service`, 3D = `payment-service`, 3E = `policy-service`,
-> 3F = `claims-service`, 3G = `document-service`, 3H = `notification-service`. Next: 3I end-to-end run.
-> Design notes per service live in `docs/` (product, quote, proposal so far).
+> 3F = `claims-service`, 3G = `document-service`, 3H = `notification-service`. Phase 4A = **Kafka** as an optional
+> transport for payment -> policy and for notifications (`KAFKA_ENABLED=true`). Next: 3I end-to-end run.
+> Design notes per service live in `docs/` (product, quote, proposal, kafka-messaging).
 
 ## 1. Project overview
 
@@ -19,10 +20,11 @@ Every step is its own service.
 | Framework | Spring Boot 3.5.x, Spring Cloud 2025.0.x |
 | Build | Maven multi-module (`./mvnw`), one parent POM, independently buildable modules |
 | Platform | Eureka (discovery), Config Server (centralised config), Spring Cloud Gateway (edge) |
-| Data | MySQL (all services currently share the `ecommerceinsurance` schema, one Flyway history table per service), Flyway migrations, H2 (MySQL mode) for tests and the `h2` profile |
+| Data | MySQL (all services currently share the `retail_db` schema, one Flyway history table per service), Flyway migrations, H2 (MySQL mode) for tests and the `h2` profile |
 | Caching | Redis (product catalogue / pricing, quote lookups) with fall-through to the database when Redis is down |
 | Security | JWT (HS256) issued by auth-service, validated at the gateway AND in every service; roles `CUSTOMER`, `AGENT`, `ADMIN`, `CLAIMS_HANDLER`, pseudo role `SERVICE` |
 | Service-to-service | OpenFeign + Eureka, Resilience4j circuit breaker + retry, transactional outbox for payment -> policy |
+| Messaging (optional) | Apache Kafka 4 (KRaft) via Spring Kafka: `payment.succeeded` (outbox -> policy-service) and `notification.requested` (all services -> notification-service), JSON records, per-service consumer groups, retry + dead-letter topics. `KAFKA_ENABLED=false` keeps everything on HTTP |
 | Observability | Actuator, correlation id in every log line (MDC), springdoc OpenAPI per service |
 
 ## 2. Architecture
@@ -48,7 +50,7 @@ flowchart LR
     POL --> PROP & DOC
     CLAIM --> POL & DOC
     NOTIF --> CUST
-    AUTH & CUST & PROD & QUOTE & PROP & PAY & POL & CLAIM & DOC & NOTIF --- DB[(MySQL ecommerceinsurance)]
+    AUTH & CUST & PROD & QUOTE & PROP & PAY & POL & CLAIM & DOC & NOTIF --- DB[(MySQL retail_db)]
 
     subgraph Platform
         EUREKA[Eureka Server :8761]
@@ -68,7 +70,7 @@ registers with Eureka). Business services can start in any order; a missing depe
 
 ### Ports
 
-| Service | Port | Phase | Tables (schema `ecommerceinsurance`) |
+| Service | Port | Phase | Tables (schema `retail_db`) |
 |---|---|---|---|
 | eureka-server | 8761 | 1 | - |
 | config-server | 8888 | 1 | - |
@@ -115,7 +117,8 @@ do not component-scan it. It contains **no business logic and no entities**:
 | `jpa` | `AuditableEntity` (`created_at/by`, `updated_at/by`, `@Version`) + JPA auditing wired to the JWT user |
 | `web` | `CorrelationIdFilter` (MDC), OpenAPI bearer-auth defaults |
 | `feign` | `ServiceTokenProvider` (self-issued `SERVICE` JWT, cached and renewed) + Feign `RequestInterceptor` adding it and the correlation id to every outgoing call |
-| `notification` | `NotificationClient`: any service can record a notification in notification-service |
+| `notification` | `NotificationPublisher` + `NotificationTransport` (Feign by default, Kafka when enabled): any service can record a notification in notification-service |
+| `messaging` | `CommonKafkaAutoConfiguration` (topics, error handler + DLT, correlation-id interceptors, Kafka notification transport), `MessagingProperties`; active only with `messaging.kafka.enabled=true` |
 
 Decision: a shared library vs. copy-paste per service. Copying keeps services fully independent but the
 error format and security rules drift within weeks. A thin, versioned library with zero domain code is
@@ -160,12 +163,14 @@ Collects the premium for an APPROVED proposal (amount verified against proposal-
 client). Charges through a `PaymentProvider` port; the only adapter today is `MockPaymentProvider` (deterministic
 decline/timeout instruments for tests) - swap in Razorpay/Stripe without touching the service. Statuses
 `INITIATED -> SUCCESS | FAILED -> REFUNDED`. A successful charge and a `payment_outbox` row are written in the
-same transaction; `OutboxDispatcher` sends `POST /api/policies/issue` after commit and `OutboxRetryScheduler`
-(every minute) retries anything that did not reach policy-service, so a policy is issued exactly once even if
-policy-service was down at payment time.
+same transaction; `OutboxDispatcher` hands the event to an `OutboxTransport` after commit - `POST /api/policies/issue`
+over HTTP, or a record on the `payment.succeeded` topic with `KAFKA_ENABLED=true` - and `OutboxRetryScheduler`
+(every minute) retries anything that was not acknowledged, so a policy is issued exactly once even if
+policy-service (or the broker) was down at payment time.
 
 ### policy-service (Phase 3E)
-Issues a policy from a paid proposal (`PENDING -> ACTIVE -> EXPIRED | CANCELLED`), generates the policy number
+Issues a policy from a paid proposal (`PENDING -> ACTIVE -> EXPIRED | CANCELLED`) - received over HTTP or, with
+Kafka on, by `PaymentSucceededListener` (consumer group `policy-service`) - generates the policy number
 and period, asks document-service to store the generated policy document, and offers
 `renew`, `cancel` and `coverage-check` (used by claims-service to confirm a policy is active and what it
 covers). `PolicyLifecycleScheduler` expires overdue policies (daily 00:05) and creates renewal reminders
@@ -191,6 +196,8 @@ through `spring.mail.*` - Gmail `smtp.gmail.com:587` STARTTLS with an App Passwo
 (SUCCESS/FAILED/REFUNDED), policy (ISSUED/CANCELLED/EXPIRED/RENEWAL_REMINDER) and claims (REGISTERED/DOCUMENTS_REQUIRED/
 APPROVED/REJECTED/SETTLED) call `NotificationPublisher` from common-lib, which dispatches asynchronously **after the
 business transaction commits** (nothing is sent for a rolled-back change) and logs, never propagates, delivery failures.
+With `KAFKA_ENABLED=true` the publisher writes to the `notification.requested` topic instead and
+`NotificationRequestedListener` (consumer group `notification-service`, 3 threads) feeds the same `accept()`.
 
 ## 4. Database architecture
 
@@ -213,7 +220,7 @@ notification-service notifications (uk idempotency_key+channel, idx user_id+crea
 ```
 
 **Deployment today (local development):** all ten services point at the single schema
-`jdbc:mysql://localhost:3306/ecommerceinsurance` (`root`/`System` by default, see section 17). Sharing a schema
+`jdbc:mysql://localhost:3306/retail_db` (`root`/`System` by default, see section 17). Sharing a schema
 needs two Flyway settings, both in the config-server: each service has its own history table
 (`spring.flyway.table: flyway_history_<service>_service` in `<service>.yml`) so the independent `V1__` scripts
 do not collide, and the shared `application.yml` sets `baseline-version: 0` so that a service starting against
@@ -483,7 +490,7 @@ auth-service still calls customer-service without a breaker (single call at regi
 
 ## 15. Docker setup
 
-`docker-compose.yml` runs Eureka, Config Server, Gateway, MySQL 8.4 (`ecommerceinsurance` plus the per-service
+`docker-compose.yml` runs Eureka, Config Server, Gateway, MySQL 8.4 (`retail_db` plus the per-service
 databases created by `docker/mysql/init.sql`), Redis and all ten business services (`EUREKA_PREFER_IP=true`,
 `MYSQL_HOST=mysql`). **Not verified on this machine** (no Docker).
 
@@ -499,17 +506,17 @@ docker compose up --build
 | eureka-server | 2 | boots, health, registry endpoint |
 | config-server | 3 | serves merged config with basic auth, anonymous 401, public health |
 | api-gateway | 24 | JWT validation, public paths, header spoofing, 401/404/503 JSON, correlation id (real Netty boot) |
-| common-lib | 10 | exception handler mapping (standalone MockMvc), JWT verifier (expiry, issuer, signature) |
+| common-lib | 12 | exception handler mapping (standalone MockMvc), JWT verifier (expiry, issuer, signature), Kafka notification transport (key = idempotency key, broker failure surfaces) |
 | auth-service | 20 | unit: register/login rules, refresh rotation + reuse detection, token round-trip; IT on H2 + Flyway: full session lifecycle, 409, 400 with field errors, 401, ADMIN vs CUSTOMER, role assignment; `AuthFlywayMySqlIT` on real MySQL via Testcontainers (auto-skipped without Docker) |
 | customer-service | 17 | unit: idempotent create, ownership, age and vehicle rules; IT: SERVICE-only create, profile + KYC flow, 403 for other customers, admin search with filters/pagination, vehicle lifecycle incl. duplicate and eligibility rules |
 | quote-service | 17 | unit: premium engine to the paisa (loadings, caps, add-on types, EV/NCB discounts, third-party only), service rules (ineligible, unknown add-on, agent-only customerId, driver age, expired/foreign accept); IT with mocked Feign clients: breakdown, preview not persisted, ownership/roles/listing, accept/cancel/expiry job, 422/400/404 mapping, product outage -> 503 via circuit breaker fallback |
 | product-service | 18 | unit: eligibility evaluator (all violations, fuel list, effective dates), aggregate validation; IT: seeded catalogue public with filters, pricing 401/403/200 by role, eligibility, admin lifecycle (409, immutable code, in-place child merge, deactivate hides from catalogue), field errors; caching contract (hit/evict) with in-memory cache; `ProductRedisCacheIT` on real Redis via Testcontainers (skipped without Docker) |
 | proposal-service | 12 | unit: only ACCEPTED, unexpired, own quotes become proposals; submission needs VERIFIED KYC, nominee and declarations; approve only from SUBMITTED/UNDER_REVIEW; reject needs a reason and records history. IT with mocked Feign: prefill from quote + customer (one per quote), full lifecycle with idempotent submit, role-scoped listing |
-| payment-service | 6 | successful payment issues the policy through the outbox and is idempotent; declined card -> FAILED with no outbox; gateway error -> FAILED, not 500; outbox retries while policy-service is down; rules and roles; documented test instruments |
-| policy-service | 6 | issue is idempotent and verifies the payment; cancellation rules; expiry job, renewal reminders and renewal issuance; renewal only inside the window / within grace; cancelled or already-renewed policies are not eligible |
+| payment-service | 8 | successful payment issues the policy through the outbox and is idempotent; declined card -> FAILED with no outbox; gateway error -> FAILED, not 500; outbox retries while policy-service is down; rules and roles; documented test instruments; `KafkaOutboxIT` (embedded KRaft broker): with Kafka on the outbox publishes `payment.succeeded` keyed by paymentReference and never calls policy-service over HTTP |
+| policy-service | 8 | issue is idempotent and verifies the payment; cancellation rules; expiry job, renewal reminders and renewal issuance; renewal only inside the window / within grace; cancelled or already-renewed policies are not eligible; `PaymentSucceededListenerIT`: a Kafka record issues the policy, redelivery is idempotent, a FAILED payment goes to `payment.succeeded.DLT` |
 | claims-service | 3 | registration rules; full lifecycle (documents, assessment, approval, settlement, closure, reopen); role-scoped search |
 | document-service | 3 | upload/download/list/verify/delete round-trip; upload validation (type, size); generated documents are SERVICE-only |
-| notification-service | 2 | renders, stores and delivers on both channels idempotently; failed delivery is retried by the job |
+| notification-service | 3 | renders, stores and delivers on both channels idempotently; failed delivery is retried by the job; `NotificationRequestedListenerIT`: a Kafka record is stored and sent on both channels, redelivery ignored |
 
 
 `./mvnw test` runs everything (surefire includes `*IT` classes; they use H2 so no infrastructure is needed).
@@ -536,7 +543,7 @@ java -jar claims-service/target/claims-service-1.0.0-SNAPSHOT.jar
 ```
 
 **Option A - local MySQL (default).** The config-server defaults point every service at
-`jdbc:mysql://localhost:3306/ecommerceinsurance` as `root`/`System`; the schema is created on first start
+`jdbc:mysql://localhost:3306/retail_db` as `root`/`System`; the schema is created on first start
 (`createDatabaseIfNotExist=true`) and each service runs its own Flyway scripts into it. Override with
 `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD` when your MySQL differs
 (these are read by the config-server, so restart it after changing them).
@@ -544,6 +551,14 @@ java -jar claims-service/target/claims-service-1.0.0-SNAPSHOT.jar
 **Option B - no MySQL.** Prefix each business service with `SPRING_PROFILES_ACTIVE=h2` (PowerShell:
 `$env:SPRING_PROFILES_ACTIVE="h2"`) for a file database under `./data/<service>.mv.db`.
 `scripts/run-local.sh` starts the whole stack this way.
+
+**Kafka (optional).** Everything runs over HTTP by default. To switch the payment -> policy hand-off and the
+notifications to Kafka: start a local broker with `scripts\kafka-start.cmd` (Apache Kafka 4.3.1 under
+`C:\Softwares\kafka\kafka_2.13-4.3.1`, KRaft mode on `localhost:9092`; the first run formats the data directory and
+patches Kafka's `kafka-run-class.bat` for the Windows command-line length limit), then start the services with
+`KAFKA_ENABLED=true` (PowerShell: `$env:KAFKA_ENABLED="true"`; another broker: `KAFKA_BOOTSTRAP_SERVERS=host:port`).
+Topics are created automatically. Inspect with `scripts\kafka-cli.cmd topics | groups | tail payment.succeeded | dlt`,
+stop the broker with `scripts\kafka-stop.cmd`. Design, settings and failure handling: `docs/kafka-messaging-design.md`.
 
 **Real e-mail (Gmail).** Turn on 2-Step Verification for the Google account, create an App Password at
 https://myaccount.google.com/apppasswords, then start notification-service with
@@ -610,12 +625,14 @@ Error body everywhere (gateway and services): `{"timestamp","status","error","me
 | Inter-service calls | `<service>/src/main/java/com/insurance/<svc>/client/*Client.java` (Feign) and `*Gateway.java` (Resilience4j wrapper) |
 | State machines | `entity/*Status.java` + `service/*Service.java` in proposal, payment, policy, claims |
 | Async delivery | `payment-service/.../event/OutboxWriter`, `OutboxDispatcher`, `scheduler/OutboxRetryScheduler`; `common-lib/.../notification/NotificationPublisher` (after-commit, fire-and-forget) |
-| Design notes | `docs/product-service-design.md`, `docs/quote-service-design.md`, `docs/proposal-service-design.md` |
+| Kafka | `common-lib/.../messaging/CommonKafkaAutoConfiguration` (topics, error handler, DLT), `payment-service/.../event/KafkaOutboxTransport`, `policy-service/.../messaging/PaymentSucceededListener`, `notification-service/.../messaging/NotificationRequestedListener`, `spring.kafka.*` + `messaging.kafka.*` in `config/application.yml`, `scripts/kafka-*.cmd` |
+| Design notes | `docs/product-service-design.md`, `docs/quote-service-design.md`, `docs/proposal-service-design.md`, `docs/kafka-messaging-design.md` |
+| How it was built, module by module, POMs line by line | `docs/how-the-project-was-built.md` |
 | E-mail delivery | `notification-service/.../provider/ChannelProvider`, `SmtpEmailProvider`, `spring.mail.*` in `config/notification-service.yml` |
 | Environment variables | `.env.example` |
 
 ## 21. Future improvements
-Kafka for the domain events (outbox already in place), RS256/JWKS instead of a shared secret, Redis rate
+Kafka for the remaining domain events (quote/proposal/claim), RS256/JWKS instead of a shared secret, Redis rate
 limiting at the gateway, Micrometer tracing, Spring Cloud Bus for config refresh, a real payment provider,
 S3 document storage, a real SMS provider, a QUOTE_EXPIRED producer in the quote expiry job, end-to-end test through
 the gateway (Phase 3I).

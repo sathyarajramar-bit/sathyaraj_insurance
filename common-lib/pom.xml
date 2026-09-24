@@ -58,6 +58,11 @@
             <artifactId>jjwt-jackson</artifactId>
             <scope>runtime</scope>
         </dependency>
+        <!-- Kafka producer/consumer support (outbox -> policy, notifications). Wired only when messaging.kafka.enabled=true. -->
+        <dependency>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
+        </dependency>
         <!-- Optional: only services that call other services have Feign; the interceptor auto-config is conditional. -->
         <dependency>
             <groupId>org.springframework.cloud</groupId>
