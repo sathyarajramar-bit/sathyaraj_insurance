@@ -11,7 +11,7 @@ spring:
       fail-fast: ${CONFIG_FAIL_FAST:false}
 
 server:
-  port: ${SERVER_PORT:8081}
+  port: ${SERVER_PORT:8091}
 
 eureka:
   client:

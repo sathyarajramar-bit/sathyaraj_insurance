@@ -1,0 +1,43 @@
+server:
+  port: ${SERVER_PORT:8888}
+
+spring:
+  application:
+    name: config-server
+  profiles:
+    # "native" = serve configuration from the file system / classpath instead of Git.
+    include: native
+  cloud:
+    config:
+      server:
+        native:
+          # Override with CONFIG_REPO_URI=file:///path/to/config-repo to edit config without rebuilding.
+          search-locations: ${CONFIG_REPO_URI:classpath:/config}
+  security:
+    user:
+      name: ${CONFIG_SERVER_USER:config-user}
+      password: ${CONFIG_SERVER_PASSWORD:config-pass}
+
+eureka:
+  client:
+    enabled: ${EUREKA_CLIENT_ENABLED:true}
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+  instance:
+    # Laptops have several adapters (VPN, Wi-Fi, virtual) and IPs change: registering as localhost is the
+    # only address that always works locally. Docker sets EUREKA_PREFER_IP=true so containers register their IP.
+    prefer-ip-address: ${EUREKA_PREFER_IP:false}
+    hostname: ${EUREKA_INSTANCE_HOSTNAME:localhost}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    org.springframework.cloud.config: INFO
