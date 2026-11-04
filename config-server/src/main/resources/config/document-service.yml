@@ -1,5 +1,9 @@
 server:
   port: ${SERVER_PORT:8089}
+  tomcat:
+    # Let Tomcat read an oversize upload to the end so the 413 from MultipartErrorHandler reaches the client
+    # instead of a connection reset (the default swallow limit is 2MB).
+    max-swallow-size: ${DOCUMENT_MAX_SWALLOW_SIZE:12MB}
 
 spring:
   datasource:
@@ -23,3 +27,21 @@ document:
     local-dir: ${DOCUMENT_STORAGE_DIR:./data/documents}
   allowed-content-types: application/pdf,image/jpeg,image/png,text/plain
   max-size-bytes: 10485760
+  # ---- Extraction: POST /api/documents/extract and /api/documents/{id}/extract ----
+  # Digital PDFs are read through their text layer (PDFBox). Scans and photos go through Tesseract OCR, which needs
+  # the language models on disk: scripts\tessdata-download.cmd fetches eng + ara into C:\Softwares\tessdata.
+  extraction:
+    # LOCAL = read the file in-process (PDFBox text layer, Tesseract for scans). MOCK = deterministic sample
+    # values per document type for offline development/tests; the envelope carries source=MOCK and simulated=true.
+    # Neither provider calls any external OCR or government service.
+    provider: ${DOCUMENT_EXTRACTION_PROVIDER:LOCAL}
+    mock:
+      default-scenario: ${DOCUMENT_EXTRACTION_MOCK_SCENARIO:SUCCESS}   # SUCCESS | MISSING_FIELDS | PROCESSING_FAILURE
+      allow-scenario-param: true                      # false => ?scenario= is ignored and the default always applies
+    min-text-layer-chars: 40                          # fewer characters than this => the PDF is a scan, OCR it
+    ocr:
+      enabled: ${OCR_ENABLED:true}
+      tessdata-path: ${TESSDATA_PATH:C:/Softwares/tessdata}
+      languages: eng+ara                              # UAE cards are bilingual
+      render-dpi: 300
+      confidence: true                                # second pass for per-word confidences (slower, better triage)

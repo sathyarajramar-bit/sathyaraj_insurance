@@ -1,5 +1,5 @@
 # Build context is the repository root:  docker build -f product-service/Dockerfile .
-FROM maven:3.9-eclipse-temurin-17 AS build
+FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /workspace
 COPY pom.xml .
 COPY common-lib common-lib
@@ -9,7 +9,7 @@ RUN mvn -B -q -f product-service/pom.xml dependency:go-offline
 COPY product-service/src product-service/src
 RUN mvn -B -q -f product-service/pom.xml package -DskipTests
 
-FROM eclipse-temurin:17-jre-alpine
+FROM eclipse-temurin:21-jre-alpine
 RUN addgroup -S app && adduser -S app -G app
 WORKDIR /app
 COPY --from=build /workspace/product-service/target/*.jar app.jar

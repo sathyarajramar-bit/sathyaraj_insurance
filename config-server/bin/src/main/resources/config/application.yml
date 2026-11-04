@@ -53,6 +53,32 @@ spring:
       pageable:
         max-page-size: 100         # caps ?size= so a client cannot ask for a million rows
         default-page-size: 20
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    client-id: ${spring.application.name}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all                                    # leader + all in-sync replicas acknowledged before send() completes
+      properties:
+        enable.idempotence: true                   # broker de-duplicates producer retries (no double records on retry)
+        spring.json.add.type.headers: false        # consumers choose their own class; payload is plain JSON
+        interceptor.classes: com.insurance.common.messaging.CorrelationIdProducerInterceptor
+    consumer:
+      group-id: ${spring.application.name}        # one consumer group per service: each service sees every record once
+      auto-offset-reset: earliest                  # a brand-new group starts from the beginning of the topic
+      enable-auto-commit: false                    # the listener container commits after the record is processed
+      key-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.key.delegate.class: org.apache.kafka.common.serialization.StringDeserializer
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        spring.json.trusted.packages: com.insurance.*
+        spring.json.use.type.headers: false        # each @KafkaListener declares spring.json.value.default.type
+        max.poll.records: 50
+    listener:
+      ack-mode: record                             # commit the offset after each record (at-least-once)
+      missing-topics-fatal: false
 
 security:
   jwt:
@@ -69,3 +95,21 @@ logging:
   pattern:
     # correlation id in every line: grep one id across gateway and service logs
     level: "%5p [${spring.application.name:-},%X{correlationId:-}]"
+
+# ---- Messaging (Kafka) ----
+# KAFKA_ENABLED=false (default): payment -> policy goes through the outbox over HTTP and notifications over Feign,
+# exactly as before. KAFKA_ENABLED=true: the outbox publishes to payment.succeeded, policy-service consumes it,
+# and every NotificationPublisher publishes to notification.requested, consumed by notification-service.
+# Topics are created at startup by KafkaAdmin from the NewTopic beans in common-lib (CommonKafkaAutoConfiguration).
+messaging:
+  kafka:
+    enabled: ${KAFKA_ENABLED:false}
+    partitions: 3
+    topics:
+      payment-succeeded: payment.succeeded
+      notification-requested: notification.requested
+    consumer:
+      max-retries: 3            # then the record goes to <topic>.DLT
+      initial-backoff-ms: 1000
+      max-backoff-ms: 10000
+

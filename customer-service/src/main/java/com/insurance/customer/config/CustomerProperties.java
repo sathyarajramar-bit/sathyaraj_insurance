@@ -19,5 +19,7 @@ public class CustomerProperties {
     public static class Vehicle {
         /** Vehicles older than this (by manufacturing year) are not insurable on the platform. */
         private int maxAgeYears = 20;
+        /** Upper bound on rows in one spreadsheet import; keeps a request well under the gateway timeout. */
+        private int importMaxRows = 200;
     }
 }

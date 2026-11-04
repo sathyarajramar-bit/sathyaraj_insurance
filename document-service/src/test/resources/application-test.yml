@@ -31,4 +31,10 @@ document:
     provider: LOCAL
     local-dir: ./target/test-documents
   allowed-content-types: application/pdf,image/jpeg,image/png,text/plain
-  max-size-bytes: 1024
+  max-size-bytes: 2097152
+  extraction:
+    provider: LOCAL        # MockExtractionControllerIT overrides this with document.extraction.provider=MOCK
+    ocr:
+      # OCR tests skip themselves (JUnit assumption) when the language models are not present here.
+      tessdata-path: ${TESSDATA_PATH:C:/Softwares/tessdata}
+      languages: eng+ara

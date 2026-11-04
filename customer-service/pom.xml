@@ -59,6 +59,12 @@
             <artifactId>mapstruct</artifactId>
         </dependency>
 
+        <!-- Vehicle import: reads .xlsx/.xls and writes the download template -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+        </dependency>
+
         <!-- Tests -->
         <dependency>
             <groupId>org.springframework.security</groupId>

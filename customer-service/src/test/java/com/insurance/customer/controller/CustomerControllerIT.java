@@ -9,17 +9,22 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Year;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -189,6 +194,82 @@ class CustomerControllerIT {
         mockMvc.perform(get("/api/customers/" + id + "/vehicles/" + vehicleId).header(HttpHeaders.AUTHORIZATION, me))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error").value("RESOURCE_NOT_FOUND"));
+    }
+
+    @Test
+    void vehicleImportIsAllOrNothingAndCustomerOnly() throws Exception {
+        createProfile(107);
+        String me = TestJwt.bearer(107, "user107@example.com", "CUSTOMER");
+        int year = Year.now().getValue() - 3;
+        String header = "registrationNumber,vehicleType,make,model,fuelType,manufacturingYear,engineCapacityCc,registrationDate,currentValue\n";
+        String good = header
+                + "GJ05AB1234,CAR,Honda,City,PETROL,%d,1498,%d-06-01,650000\n".formatted(year, year)
+                + "KA01ZZ8888,BIKE,Hero,Splendor,PETROL,%d,97,%d-06-01,55000\n".formatted(year, year);
+        String bad = header
+                + "GJ05AB1234,CAR,Honda,City,PETROL,%d,1498,%d-06-01,650000\n".formatted(year, year)   // now a duplicate in DB
+                + "TN09CD4321,CAR,Honda,City,PETROL,%d,1498,%d-06-01,650000\n".formatted(year - 30, year - 30);
+
+        // template download
+        byte[] template = mockMvc.perform(get("/api/customers/me/vehicles/import-template").header(HttpHeaders.AUTHORIZATION, me))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"vehicle-import-template.xlsx\""))
+                .andReturn().getResponse().getContentAsByteArray();
+        assertThat(template).startsWith((byte) 'P', (byte) 'K');   // a zip, i.e. an xlsx
+
+        // dry run saves nothing
+        mockMvc.perform(multipart("/api/customers/me/vehicles/import?dryRun=true")
+                        .file(csv(good)).header(HttpHeaders.AUTHORIZATION, me))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("VALID"))
+                .andExpect(jsonPath("$.totalRows").value(2));
+        mockMvc.perform(get("/api/customers/me/vehicles").header(HttpHeaders.AUTHORIZATION, me))
+                .andExpect(jsonPath("$.totalElements").value(0));
+
+        // real import
+        mockMvc.perform(multipart("/api/customers/me/vehicles/import").file(csv(good)).header(HttpHeaders.AUTHORIZATION, me))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IMPORTED"))
+                .andExpect(jsonPath("$.importedCount").value(2))
+                .andExpect(jsonPath("$.vehicles[1].registrationNumber").value("KA01ZZ8888"));
+        mockMvc.perform(get("/api/customers/me/vehicles").header(HttpHeaders.AUTHORIZATION, me))
+                .andExpect(jsonPath("$.totalElements").value(2));
+
+        // one existing + one too old: nothing saved, both problems reported with their row numbers
+        mockMvc.perform(multipart("/api/customers/me/vehicles/import").file(csv(bad)).header(HttpHeaders.AUTHORIZATION, me))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REJECTED"))
+                .andExpect(jsonPath("$.importedCount").value(0))
+                .andExpect(jsonPath("$.errors[0].row").value(2))
+                .andExpect(jsonPath("$.errors[0].message").value("Vehicle GJ05AB1234 is already registered"))
+                .andExpect(jsonPath("$.errors[1].row").value(3))
+                .andExpect(jsonPath("$.errors[1].message").value("Vehicles older than 20 years are not eligible for insurance"));
+        mockMvc.perform(get("/api/customers/me/vehicles").header(HttpHeaders.AUTHORIZATION, me))
+                .andExpect(jsonPath("$.totalElements").value(2));
+
+        // file problems are the platform's 400
+        mockMvc.perform(multipart("/api/customers/me/vehicles/import").file(csv("make,model\nHonda,City\n")).header(HttpHeaders.AUTHORIZATION, me))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("VALIDATION_ERROR"));
+
+        // row cap (5 in application-test.yml)
+        StringBuilder many = new StringBuilder(header);
+        for (int i = 0; i < 6; i++) {
+            many.append("DL0%dAA%04d,CAR,Honda,City,PETROL,%d,1498,%d-06-01,650000\n".formatted(i + 1, 1000 + i, year, year));
+        }
+        mockMvc.perform(multipart("/api/customers/me/vehicles/import").file(csv(many.toString())).header(HttpHeaders.AUTHORIZATION, me))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("The file has 6 vehicles; at most 5 can be imported at once"));
+
+        // staff cannot use the customer's import
+        mockMvc.perform(multipart("/api/customers/me/vehicles/import").file(csv(good))
+                        .header(HttpHeaders.AUTHORIZATION, TestJwt.bearer(5, "agent@x.com", "AGENT")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(multipart("/api/customers/me/vehicles/import").file(csv(good)))
+                .andExpect(status().isUnauthorized());
+    }
+
+    private static MockMultipartFile csv(String content) {
+        return new MockMultipartFile("file", "vehicles.csv", "text/csv", content.getBytes(StandardCharsets.UTF_8));
     }
 
     @Test

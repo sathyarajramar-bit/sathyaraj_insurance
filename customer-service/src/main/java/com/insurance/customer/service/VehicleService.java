@@ -98,7 +98,8 @@ public class VehicleService {
                 .orElseThrow(() -> new ResourceNotFoundException("Vehicle", vehicleId));
     }
 
-    void validateBusinessRules(VehicleRequest request) {
+    /** Rules beyond Bean Validation; shared with the spreadsheet import so both paths accept the same vehicles. */
+    public void validateBusinessRules(VehicleRequest request) {
         int currentYear = Year.now().getValue();
         if (request.manufacturingYear() > currentYear) {
             throw new ValidationException("Manufacturing year cannot be in the future");
@@ -112,7 +113,7 @@ public class VehicleService {
         }
     }
 
-    static String normalise(String registrationNumber) {
+    public static String normalise(String registrationNumber) {
         return registrationNumber.replaceAll("[\\s-]", "").toUpperCase();
     }
 }

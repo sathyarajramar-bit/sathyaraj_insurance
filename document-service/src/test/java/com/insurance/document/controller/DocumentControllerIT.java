@@ -89,7 +89,7 @@ class DocumentControllerIT {
                         .param("referenceType", "CLAIM").param("referenceNumber", "CL-2").param("documentType", "OTHER")
                         .header(HttpHeaders.AUTHORIZATION, JANE))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("not allowed")));
-        mockMvc.perform(multipart("/api/documents").file(new MockMultipartFile("file", "big.png", "image/png", new byte[2048]))
+        mockMvc.perform(multipart("/api/documents").file(new MockMultipartFile("file", "big.png", "image/png", new byte[2 * 1024 * 1024 + 1]))
                         .param("referenceType", "CLAIM").param("referenceNumber", "CL-2").param("documentType", "CLAIM_PHOTO")
                         .header(HttpHeaders.AUTHORIZATION, JANE))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("maximum size")));

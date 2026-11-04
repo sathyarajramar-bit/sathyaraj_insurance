@@ -12,8 +12,14 @@ spring:
     # All services share the retail_db schema: each one keeps its own history table so their
     # independent V1.. scripts do not collide.
     table: flyway_history_customer_service
+  servlet:
+    multipart:
+      # Vehicle spreadsheet import (POST /api/customers/me/vehicles/import). 200 rows is well under 1 MB.
+      max-file-size: ${CUSTOMER_IMPORT_MAX_FILE_SIZE:2MB}
+      max-request-size: ${CUSTOMER_IMPORT_MAX_FILE_SIZE:2MB}
 
 customer:
   vehicle:
     max-age-years: 20          # eligibility: vehicles older than this cannot be registered for insurance
+    import-max-rows: 200       # one spreadsheet import is validated and saved in a single request
   minimum-age-years: 18

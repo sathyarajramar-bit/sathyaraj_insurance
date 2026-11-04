@@ -10,7 +10,8 @@ Every step is its own service.
 > 3B = `quote-service`, 3C = `proposal-service`, 3D = `payment-service`, 3E = `policy-service`,
 > 3F = `claims-service`, 3G = `document-service`, 3H = `notification-service`. Phase 4A = **Kafka** as an optional
 > transport for payment -> policy and for notifications (`KAFKA_ENABLED=true`). Next: 3I end-to-end run.
-> Design notes per service live in `docs/` (product, quote, proposal, kafka-messaging).
+> Design notes for every module live in `docs/` (platform, auth, customer, product, quote, proposal, payment,
+> policy, claims, notification, kafka-messaging, document-extraction).
 
 ## 1. Project overview
 
@@ -123,17 +124,21 @@ do not component-scan it. It contains **no business logic and no entities**:
 Decision: a shared library vs. copy-paste per service. Copying keeps services fully independent but the
 error format and security rules drift within weeks. A thin, versioned library with zero domain code is
 the usual compromise; if it ever grows business logic, that is the signal to split it.
+Eureka, Config Server, gateway and common-lib are detailed together in `docs/platform-design.md`.
 
 ### auth-service (Phase 2)
 Registration, login, JWT issuing, refresh-token rotation, roles (`CUSTOMER`, `ADMIN`, `AGENT`,
 `CLAIMS_HANDLER`), admin user search. Owns `users`, `user_roles`, `refresh_tokens`. On registration it calls
 customer-service through OpenFeign to create the profile. Bootstraps the first ADMIN from
-`ADMIN_EMAIL`/`ADMIN_PASSWORD`.
+`ADMIN_EMAIL`/`ADMIN_PASSWORD`. See `docs/auth-service-design.md`.
 
 ### customer-service (Phase 2)
 Customer profile, address (embedded value object), KYC workflow (`PENDING -> VERIFIED | REJECTED`) and
 vehicles. Owns `customers`, `vehicles`. Ownership rule in `CustomerAccessPolicy`:
 a customer sees only their own data; ADMIN/AGENT see everyone; SERVICE (other microservices) may read.
+Vehicles can also be imported from a spreadsheet (`POST /me/vehicles/import`, template at `/me/vehicles/import-template`):
+header-matched columns, the same validation as the form on every row, all-or-nothing with a per-row error report.
+See `docs/customer-service-design.md`.
 
 ### product-service (Phase 3A)
 Catalogue aggregate: product + coverages + add-ons + eligibility rules + pricing configuration, seeded with
@@ -166,7 +171,7 @@ decline/timeout instruments for tests) - swap in Razorpay/Stripe without touchin
 same transaction; `OutboxDispatcher` hands the event to an `OutboxTransport` after commit - `POST /api/policies/issue`
 over HTTP, or a record on the `payment.succeeded` topic with `KAFKA_ENABLED=true` - and `OutboxRetryScheduler`
 (every minute) retries anything that was not acknowledged, so a policy is issued exactly once even if
-policy-service (or the broker) was down at payment time.
+policy-service (or the broker) was down at payment time. See `docs/payment-service-design.md`.
 
 ### policy-service (Phase 3E)
 Issues a policy from a paid proposal (`PENDING -> ACTIVE -> EXPIRED | CANCELLED`) - received over HTTP or, with
@@ -174,18 +179,26 @@ Kafka on, by `PaymentSucceededListener` (consumer group `policy-service`) - gene
 and period, asks document-service to store the generated policy document, and offers
 `renew`, `cancel` and `coverage-check` (used by claims-service to confirm a policy is active and what it
 covers). `PolicyLifecycleScheduler` expires overdue policies (daily 00:05) and creates renewal reminders
-(daily 08:15) recorded in `policy_renewal_reminders`.
+(daily 08:15) recorded in `policy_renewal_reminders`. See `docs/policy-service-design.md`.
 
 ### claims-service (Phase 3F)
 Claim lifecycle against an active policy: `REGISTERED -> UNDER_REVIEW -> DOCUMENTS_REQUIRED -> APPROVED |
 REJECTED -> SETTLED -> CLOSED` (with `reopen`), full `claim_status_history`, assessment amounts, and links to
 uploaded evidence (`claim_documents`, verified through document-service). Introduces the `CLAIMS_HANDLER` role.
 `PendingClaimReminderScheduler` (daily 09:30) nudges handlers about claims waiting on documents.
+See `docs/claims-service-design.md`.
 
 ### document-service (Phase 3G)
 Stores documents: multipart upload by users (KYC proofs, claim evidence), `POST /generated` for system-produced
 files (policy PDFs), download of content, `VERIFIED | REJECTED` status by staff, soft delete
 (`DELETED`). Metadata in `documents`; binary content on the local file system (configurable root).
+**Extraction** (`POST /extract`, `POST /{id}/extract`): a digital PDF is read through its text layer (PDFBox), a
+scan or photo through Tesseract OCR (eng+ara), then a per-type field extractor (`DRIVING_LICENSE` today, generic
+otherwise) returns the `message / messageType / response` envelope with snake_case fields and a confidence per
+field. See `docs/document-extraction-design.md`; OCR needs `scripts\tessdata-download.cmd` once.
+`DOCUMENT_EXTRACTION_PROVIDER=MOCK` swaps the pipeline for deterministic sample fixtures (`?scenario=SUCCESS |
+MISSING_FIELDS | PROCESSING_FAILURE`) for offline development; the envelope then says `source: MOCK, simulated: true`.
+No provider calls an external OCR or government service.
 
 ### notification-service (Phase 3H)
 Records notifications per customer/user with channel (`EMAIL`, `SMS`) and delivery status, sends them through a
@@ -198,6 +211,7 @@ APPROVED/REJECTED/SETTLED) call `NotificationPublisher` from common-lib, which d
 business transaction commits** (nothing is sent for a rolled-back change) and logs, never propagates, delivery failures.
 With `KAFKA_ENABLED=true` the publisher writes to the `notification.requested` topic instead and
 `NotificationRequestedListener` (consumer group `notification-service`, 3 threads) feeds the same `accept()`.
+See `docs/notification-service-design.md`.
 
 ## 4. Database architecture
 
@@ -254,6 +268,8 @@ CUSTOMER
 GET  /api/customers/me                        my profile
 PUT  /api/customers/me                        name, phone, date of birth, gender, address
 PUT  /api/customers/me/kyc                    submit KYC document (status -> PENDING)
+POST /api/customers/me/vehicles/import?dryRun=   spreadsheet import (multipart file, .xlsx/.xls/.csv), all-or-nothing, row errors in body
+GET  /api/customers/me/vehicles/import-template  .xlsx header row for the import
 POST /api/customers/me/vehicles               add vehicle
 GET  /api/customers/me/vehicles?page=&size=&sort=
 PUT  /api/customers/me/vehicles/{vehicleId}
@@ -332,6 +348,11 @@ GET  /api/documents/{id}  /content            metadata / download (owner, staff,
 GET  /api/documents?ownerId=&type=
 PATCH /api/documents/{id}/status              VERIFIED | REJECTED (staff)
 DELETE /api/documents/{id}                    soft delete (ADMIN, AGENT, CLAIMS_HANDLER)
+POST /api/documents/extract?documentType=     multipart PDF / scan / photo -> JSON fields, nothing stored
+POST /api/documents/{id}/extract              same for a stored document (owner, staff, SERVICE)
+                                              envelope: message / messageType S|E / response (snake_case fields,
+                                              field_confidence, warnings, source TEXT_LAYER|OCR|MOCK, simulated)
+                                              ?scenario= selects the fixture when DOCUMENT_EXTRACTION_PROVIDER=MOCK
 
 Notifications
 POST /api/notifications                       SERVICE: record + send (EMAIL | SMS)
@@ -626,7 +647,7 @@ Error body everywhere (gateway and services): `{"timestamp","status","error","me
 | State machines | `entity/*Status.java` + `service/*Service.java` in proposal, payment, policy, claims |
 | Async delivery | `payment-service/.../event/OutboxWriter`, `OutboxDispatcher`, `scheduler/OutboxRetryScheduler`; `common-lib/.../notification/NotificationPublisher` (after-commit, fire-and-forget) |
 | Kafka | `common-lib/.../messaging/CommonKafkaAutoConfiguration` (topics, error handler, DLT), `payment-service/.../event/KafkaOutboxTransport`, `policy-service/.../messaging/PaymentSucceededListener`, `notification-service/.../messaging/NotificationRequestedListener`, `spring.kafka.*` + `messaging.kafka.*` in `config/application.yml`, `scripts/kafka-*.cmd` |
-| Design notes | `docs/product-service-design.md`, `docs/quote-service-design.md`, `docs/proposal-service-design.md`, `docs/kafka-messaging-design.md` |
+| Design notes | one per module in `docs/`: `platform-design.md` (eureka, config-server, gateway, common-lib), `auth-service-design.md`, `customer-service-design.md`, `product-service-design.md`, `quote-service-design.md`, `proposal-service-design.md`, `payment-service-design.md`, `policy-service-design.md`, `claims-service-design.md`, `notification-service-design.md`, `kafka-messaging-design.md`, `document-extraction-design.md` |
 | How it was built, module by module, POMs line by line | `docs/how-the-project-was-built.md` |
 | E-mail delivery | `notification-service/.../provider/ChannelProvider`, `SmtpEmailProvider`, `spring.mail.*` in `config/notification-service.yml` |
 | Environment variables | `.env.example` |
