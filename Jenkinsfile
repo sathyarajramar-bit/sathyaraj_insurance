@@ -44,6 +44,16 @@ pipeline {
                 archiveArtifacts artifacts: '**/target/*.jar', excludes: '**/target/*-plain.jar', fingerprint: true
             }
         }
+
+        stage('Deploy') {
+            // Only deploy a fully green build: a failed test turns the build yellow and skips this.
+            when {
+                expression { currentBuild.currentResult == 'SUCCESS' }
+            }
+            steps {
+                bat 'powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\deploy-local.ps1'
+            }
+        }
     }
 
     post {
